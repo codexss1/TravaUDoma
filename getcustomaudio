@@ -286,3 +286,4 @@ local function getcustomaudio(url, instance)
 	end)
 	return audioObject
 end
+return getcustomaudio
