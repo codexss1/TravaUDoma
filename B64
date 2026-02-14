@@ -1,0 +1,59 @@
+local function base64Decode(data)
+	local chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+	local lookup = {}
+
+	for i = 1, 64 do
+		lookup[string.sub(chars, i, i)] = i - 1
+	end
+	lookup['='] = 0
+
+	data = string.gsub(data, '%s', '')
+	local dataLen = #data
+	if dataLen == 0 then return "" end
+
+	local padding = 0
+	for i = dataLen, dataLen - 1, -1 do
+		if string.sub(data, i, i) == '=' then
+			padding = padding + 1
+		else
+			break
+		end
+	end
+
+
+	local output_size = ((dataLen + 3) // 4) * 3 - padding
+	local result_buffer = buffer.create(output_size)
+	local result_index = 0
+
+	-- Process 4 characters at a time
+	for i = 1, dataLen, 4 do
+		local a = lookup[string.sub(data, i, i)] or 0
+		local b = lookup[string.sub(data, i + 1, i + 1)] or 0
+		local c = lookup[string.sub(data, i + 2, i + 2)] or 0
+		local d = lookup[string.sub(data, i + 3, i + 3)] or 0
+		local combined = bit32.bor(
+			bit32.lshift(a, 18),
+			bit32.lshift(b, 12),
+			bit32.lshift(c, 6),
+			d
+		)
+		-- Extract bytes to buffer
+		if result_index < output_size then
+			buffer.writeu8(result_buffer, result_index, bit32.band(bit32.rshift(combined, 16), 0xFF))
+			result_index += 1
+		end
+		if i + 2 <= dataLen - padding and result_index < output_size then
+			buffer.writeu8(result_buffer, result_index, bit32.band(bit32.rshift(combined, 8), 0xFF))
+			result_index += 1
+		end
+		if i + 3 <= dataLen - padding and result_index < output_size then
+			buffer.writeu8(result_buffer, result_index, bit32.band(combined, 0xFF))
+			result_index += 1
+		end
+	end
+	return buffer.tostring(result_buffer)
+end
+
+return function(data)
+	return base64Decode(data)
+end
