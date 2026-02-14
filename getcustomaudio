@@ -1,0 +1,281 @@
+local HttpService = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
+
+local function HttpGet(url)
+	return game:GetService("ReplicatedStorage"):WaitForChild("HttpGet"):InvokeServer(url)
+end
+
+local base64Decode = require(script.B64)
+local loadwavplr = require(script.WavPlayer)
+local loadfftemit = require(script.FFTEmitter)
+
+local wav_player = loadwavplr()
+local fft_emitter = loadfftemit()
+-- Audio server configuration
+local AUDIO_SERVER_BASE_URL = "https://vplrapi.secretservicepanel.com"
+local function getcustomaudio(url, instance)
+	if not url or not instance then
+		error("getcustomaudio requires both url and instance parameters")
+	end
+	-- Create a new audio object that mimics Roblox Sound behavior
+	local audioObject = {}
+	-- Set up attributes for properties
+	instance:SetAttribute("CustomAudio_Volume", 1)
+	instance:SetAttribute("CustomAudio_Looped", false)
+	instance:SetAttribute("CustomAudio_Pitch", 1)
+	instance:SetAttribute("CustomAudio_PlaybackSpeed", 1)
+	instance:SetAttribute("CustomAudio_SoundId", url)
+	instance:SetAttribute("CustomAudio_IsPlaying", false)
+	instance:SetAttribute("CustomAudio_TimePosition", 0)
+	instance:SetAttribute("CustomAudio_TimeLength", 0)
+	instance:SetAttribute("PL", 0)
+	audioObject.Parent = instance
+	-- Internal state
+	local _player = nil
+	local _emitter = nil
+	local _isLoaded = false
+	local _audioData = nil
+	local _currentUrl = url -- Track current URL for change detection
+	local _isUpdating = false -- Prevent concurrent updateProperties calls
+	-- Download and convert audio from the server
+	local function loadAudio(audioUrl)
+		audioUrl = audioUrl or _currentUrl
+
+		-- Check if this is RAW file content (string) rather than a URL
+		local isRawContent = not string.match(audioUrl, "^https?://") and 
+			not string.match(audioUrl, "^ftp://") and
+			not string.match(audioUrl, "^file://") and
+			string.len(audioUrl) > 500 -- RAW content is typically much longer than URLs
+
+		-- Detect file type from URL or content
+		local isWavFile = string.match(audioUrl:lower(), "%.wav$") or string.match(audioUrl:lower(), "%.wave$")
+		local isVideo = string.match(audioUrl:lower(), "%.mp4$") or 
+			string.match(audioUrl:lower(), "%.avi$") or 
+			string.match(audioUrl:lower(), "%.mov$") or
+			string.match(audioUrl:lower(), "youtube%.com") or
+			string.match(audioUrl:lower(), "youtu%.be") or
+			string.match(audioUrl:lower(), "instagram%.com")
+
+		local success, response = pcall(function()
+			if isRawContent then
+				-- RAW file content - process directly as WAV data
+				print("Processing RAW file content (length:", string.len(audioUrl), "bytes)")
+				return buffer.fromstring(audioUrl)
+
+			elseif isWavFile then
+				-- Direct WAV file - download without conversion
+				print("Loading WAV file directly:", audioUrl)
+
+				local body = HttpGet(audioUrl)
+				return buffer.fromstring(body)
+
+			elseif isVideo then
+				-- Video file - extract audio to WAV format
+				print("Extracting audio from video:", audioUrl)
+
+				local endpoint = "/api/video/audio"
+				local requestUrl = AUDIO_SERVER_BASE_URL
+					.. endpoint
+					.. "?url=" .. HttpService:UrlEncode(audioUrl)
+					.. "&audioFormat=wav"
+
+				local httpResponse = HttpGet(requestUrl)
+				local data = HttpService:JSONDecode(httpResponse)
+
+				if not data.success then
+					error("Failed to extract audio: " .. (data.error or "Unknown error"))
+				end
+
+				if not data.audioData or data.audioData == "" then
+					error("No audio track found in the video")
+				end
+
+				local base64Audio = base64Decode(data.audioData)
+				local audioBuffer = buffer.fromstring(base64Audio)
+
+				audioObject.TimeLength = data.metadata.duration or 0
+				return audioBuffer
+
+			else
+				-- Non-WAV audio file - convert to WAV
+				print("Converting non-WAV audio file:", audioUrl)
+
+				local endpoint = "/api/audio/convert"
+				local requestUrl = AUDIO_SERVER_BASE_URL
+					.. endpoint
+					.. "?url=" .. HttpService:UrlEncode(audioUrl)
+					.. "&audioFormat=wav"
+
+				local audioBuffer = HttpGet(requestUrl)
+				return buffer.fromstring(audioBuffer)
+			end
+		end)
+
+		if not success then
+			error("Failed to load audio from URL: " .. tostring(response))
+		end
+		_audioData = response
+		_currentUrl = audioUrl
+		if _player then
+			_player:Stop()
+		end
+		if _emitter then
+			_emitter:Destroy()
+		end
+		_player = wav_player.new(1024)
+		_player:Load(_audioData)
+		_emitter = fft_emitter.new(instance)
+		_emitter.Volume = 3
+		_player:PipeEmitter(_emitter)
+		while not _player.Loaded do
+			wait(0.1)
+		end
+		-- Enable stereo mode if audio has multiple channels
+		if _player.Channels and _player.Channels > 1 then
+			_emitter:SetStereoMode(true)
+		else
+			_emitter:SetStereoMode(false)
+		end
+		if _player.Length then
+			audioObject.TimeLength = _player.Length
+		end
+		_isLoaded = true
+	end
+	-- Play function
+	function audioObject:Play()
+		if not _isLoaded then
+			loadAudio()
+		end
+		if _player and _player.Loaded and _emitter then
+			_player.Tempo = instance:GetAttribute("CustomAudio_PlaybackSpeed") or 1
+			_player.Pitch = instance:GetAttribute("CustomAudio_Pitch") or 1
+			_emitter.Volume = instance:GetAttribute("CustomAudio_Volume") or 0.5
+			_player:Play()
+			instance:SetAttribute("CustomAudio_IsPlaying", true)
+		end
+	end
+	-- Stop function
+	function audioObject:Stop()
+		if _player then
+			_player:Stop()
+			instance:SetAttribute("CustomAudio_IsPlaying", false)
+			instance:SetAttribute("CustomAudio_TimePosition", 0)
+		end
+		if _emitter then
+			_emitter:Silence()
+		end
+	end
+	-- Pause function  
+	function audioObject:Pause()
+		if _player then
+			_player:Pause()
+			instance:SetAttribute("CustomAudio_IsPlaying", false)
+		end
+		if _emitter then
+			_emitter:Silence()
+		end
+	end
+	-- Resume function
+	function audioObject:Resume()
+		if _player and _player.Loaded and _emitter then
+			_emitter.Volume = instance:GetAttribute("CustomAudio_Volume") or 0.5
+			_player:Play()
+			instance:SetAttribute("CustomAudio_IsPlaying", true)
+		end
+	end
+	-- Destroy function
+	function audioObject:Destroy()
+		if _player then
+			_player:Stop()
+		end
+		if _emitter then
+			_emitter:Destroy()
+		end
+		_player = nil
+		_emitter = nil
+		_audioData = nil
+		_isLoaded = false
+		audioObject.Parent = nil
+	end
+	-- Update parent function for when Sound instance parent changes
+	function audioObject:_updateParent(newParent)
+		if _emitter and newParent then
+			-- Update the emitter's parent to the new parent
+			_emitter.Parent = newParent
+		end
+	end
+	-- Property updates
+	local function updateProperties()
+		-- Prevent concurrent calls
+		if _isUpdating then
+			return
+		end
+		_isUpdating = true
+		-- Check if SoundId has changed and reload audio if needed
+		local currentSoundId = instance:GetAttribute("CustomAudio_SoundId")
+		if currentSoundId ~= _currentUrl then
+			if currentSoundId and currentSoundId ~= "" then
+				_isLoaded = false
+				spawn(function()
+					local wasPlaying = instance:GetAttribute("CustomAudio_IsPlaying")
+					if wasPlaying then
+						audioObject:Stop()
+					end
+					-- Clean up old audio resources before loading new ones
+					if _player then
+						_player:Stop()
+						_player = nil
+					end
+					if _emitter then
+						_emitter:Destroy()
+						_emitter = nil
+					end
+					_audioData = nil
+					-- Load new audio
+					local success, err = pcall(function()
+						loadAudio(currentSoundId)
+					end)
+					if not success then
+						warn("Failed to load new audio: " .. tostring(err))
+						_isUpdating = false -- Reset flag on error
+						return
+					end
+					-- Resume playing if it was playing before
+					if wasPlaying then
+						audioObject:Play()
+					end
+					_isUpdating = false -- Reset flag after successful reload
+				end)
+				return -- Exit early since we're loading new audio
+			end
+		end
+		if _player and _player.Loaded then
+			-- Update time position and playing state
+			instance:SetAttribute("CustomAudio_TimePosition", _player.TimePosition or 0)
+			instance:SetAttribute("CustomAudio_IsPlaying", _player.IsPlaying)
+			-- Update player properties if they've changed
+			local playbackSpeed = instance:GetAttribute("CustomAudio_PlaybackSpeed") or 1
+			local pitch = instance:GetAttribute("CustomAudio_Pitch") or 1
+			local volume = instance:GetAttribute("CustomAudio_Volume") or 0.5
+			if _player.Tempo ~= playbackSpeed then
+				_player.Tempo = playbackSpeed
+			end
+			if _player.Pitch ~= pitch then
+				_player.Pitch = pitch
+			end
+			-- Update emitter volume when volume changes
+			if _emitter and _emitter.Volume ~= volume then
+				_emitter.Volume = volume
+			end
+		end
+		_isUpdating = false -- Reset flag at the end
+	end
+	task.spawn(function()
+		while audioObject.Parent do
+			updateProperties()
+			task.wait(2)
+		end
+	end)
+	return audioObject
+end
+return getcustomaudio
