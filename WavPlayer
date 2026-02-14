@@ -1,5 +1,5 @@
 local RunService = game:GetService("RunService")
-local parse_wave_content = require(script.WAVE)
+local parse_wave_content = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WAVE"))
 
 local function loadwavplr()
 
