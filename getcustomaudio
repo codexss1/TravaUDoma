@@ -1,13 +1,11 @@
 local HttpService = game:GetService("HttpService")
 local SoundService = game:GetService("SoundService")
-
 local function HttpGet(url)
-	return game:GetService("ReplicatedStorage"):WaitForChild("HttpGet"):InvokeServer(url)
+	return game:HttpGet(url)
 end
-
-local base64Decode = require(script.B64)
-local loadwavplr = require(script.WavPlayer)
-local loadfftemit = require(script.FFTEmitter)
+local base64Decode = loadstring(HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/B64"))
+local loadwavplr = loadstring(HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WavPlayer"))
+local loadfftemit =  loadstring(HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))
 
 local wav_player = loadwavplr()
 local fft_emitter = loadfftemit()
