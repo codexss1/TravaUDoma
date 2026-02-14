@@ -3,9 +3,12 @@ local SoundService = game:GetService("SoundService")
 local function HttpGet(url)
 	return game:HttpGet(url)
 end
-local base64Decode = require(HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/B64"))
-local loadwavplr = require(HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WavPlayer"))
-local loadfftemit =  require(HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))
+-- Base64 decoder
+local base64Decode = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/B64"))()
+-- WavPlayer
+local WavPlayer = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WavPlayer"))()
+-- FFTEmitter
+local FFTEmitter = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))()
 
 local wav_player = loadwavplr()
 local fft_emitter = loadfftemit()
