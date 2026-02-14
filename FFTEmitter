@@ -1,0 +1,469 @@
+local function loadfftemit()
+	local emitter = {}
+	emitter.__index = emitter
+	local base_component_frequency = 440
+	-- Audio assets with pitch-based frequency simulation
+	local AUDIO_ASSETS = {
+		sine_440 = "rbxassetid://87499741698429",      -- Sine wave 440Hz
+		sine_880 = "rbxassetid://73404369699860",      -- Sine wave 880Hz
+		sine_1760 = "rbxassetid://87936499980838",     -- Sine wave 1760Hz
+		sine_220 = "rbxassetid://106953724081000",     -- Sine wave 220Hz
+		high_freq_1050 = "rbxassetid://108360838779849",     -- 1050Hz EAS tone
+		harmonic_110 = "rbxassetid://98872171199202",  -- Complex harmonic at 110Hz
+		harmonic_220 = "rbxassetid://121279027149607", -- Complex harmonic at 220Hz
+		sine_55 = "rbxassetid://137143142161445",      -- Ultra-low sine wave at 55Hz
+		sine_82 = "rbxassetid://134390276516887",      -- Low sine wave at 82Hz (guitar low E)
+		sine_110 = "rbxassetid://86982369911975",      -- Pure sine wave at 110Hz
+		sine_147 = "rbxassetid://119710357693408",     -- Musical sine wave at 147Hz (D3 note)
+		sine_164 = "rbxassetid://134343819515098",     -- Musical sine wave at 164Hz (E3 note)
+		sine_196 = "rbxassetid://127229144203535",     -- Musical sine wave at 196Hz (G3 note)
+		sine_220_pure = "rbxassetid://91232552404866", -- Pure sine wave at 220Hz
+		sine_294 = "rbxassetid://113213594179853",     -- Musical sine wave at 294Hz (D4 note)
+		sine_330 = "rbxassetid://99272526755278",      -- Musical sine wave at 330Hz (E4 note)
+		sine_392 = "rbxassetid://99599053234634",      -- Musical sine wave at 392Hz (G4 note)
+		sine_440_pure = "rbxassetid://118655143018348", -- Pure sine wave at 440Hz (A4 note)
+		sine_659 = "rbxassetid://113045538839304",     -- Musical sine wave at 659Hz (E5 note)
+		sine_660 = "rbxassetid://103722990305344",     -- Mid-high sine wave at 660Hz
+		sine_784 = "rbxassetid://80091730136200",      -- Musical sine wave at 784Hz (G5 note)
+		sine_800 = "rbxassetid://116507880703971",     -- Vocal formant at 800Hz - Speech frequencies
+		sine_880_pure = "rbxassetid://121356310809786", -- Pure sine wave at 880Hz
+		sine_1100 = "rbxassetid://108360838779849",    -- High sine wave at 1100Hz - Upper highs
+		sine_1318 = "rbxassetid://95409990638553",     -- Ultra-high E sine wave at 1318Hz (E6 octave)
+		sine_1320 = "rbxassetid://75501158523605",     -- Very high sine wave at 1320Hz - Treble range
+		sine_1568 = "rbxassetid://110744460149580",    -- Musical sine wave at 1568Hz (G6 note)
+		sine_1760_pure = "rbxassetid://118233698038344", -- Pure sine wave at 1760Hz - Ultra-high treble
+		sine_2200 = "rbxassetid://76386812023132",     -- Extreme high sine wave at 2200Hz - Very high frequencies
+		sine_2400 = "rbxassetid://80267269573392",     -- Vocal formant at 2400Hz - Consonant frequencies
+		sine_2640 = "rbxassetid://106813604549899",    -- Ultra-high sine wave at 2640Hz - Extreme highs
+		sine_3520 = "rbxassetid://75577844560638",     -- Maximum high sine wave at 3520Hz - Extreme treble
+		sine_4400 = "rbxassetid://111600060271305",    -- Extreme sine wave at 4400Hz - Air frequencies
+		square_220 = "rbxassetid://112458345384896",   -- Square wave at 220Hz - Bass with harmonics
+		triangle_220 = "rbxassetid://102200995841402", -- Triangle wave at 220Hz - Smooth bass tones
+		sawtooth_220 = "rbxassetid://135425019152268", -- Sawtooth wave at 220Hz - Bright bass frequencies
+		sine_5280 = "rbxassetid://120210689797424", 
+		sine_6160 = "rbxassetid://111640991112415",  
+		sine_7040 = "rbxassetid://72176051681542",  
+		sine_8000 = "rbxassetid://118001214417767",  
+		sine_8800 = "rbxassetid://84811838721138",  
+		sine_9600 = "rbxassetid://73753977605757",  
+		sine_10560 = "rbxassetid://92000638251102",  
+		sine_11200 = "rbxassetid://72844469671671",  
+		sine_12800 = "rbxassetid://114515343636765",
+		sine_13600 = "rbxassetid://90864020039375",
+		sine_14400 = "rbxassetid://104519551282236",
+		sine_15200 = "rbxassetid://85809537875165",
+		sine_16000 = "rbxassetid://76911418738732",
+	}
+	-- Available frequencies split into low and high ranges for better selection
+	local LOW_FREQUENCIES = {
+		{freq = 55, asset = "sine_55"},
+		{freq = 82, asset = "sine_82"},
+		{freq = 110, asset = "harmonic_110"},
+		{freq = 110, asset = "sine_110"},
+		{freq = 147, asset = "sine_147"},
+		{freq = 164, asset = "sine_164"},
+		{freq = 196, asset = "sine_196"},
+		{freq = 220, asset = "harmonic_220"},
+		{freq = 294, asset = "sine_294"},
+		{freq = 330, asset = "sine_330"},
+		{freq = 392, asset = "sine_392"},
+		{freq = 440, asset = "sine_440"},
+		{freq = 659, asset = "sine_659"},
+		{freq = 660, asset = "sine_660"},
+		{freq = 784, asset = "sine_784"},
+		{freq = 800, asset = "sine_800"},
+		{freq = 880, asset = "sine_880"},
+		{freq = 1100, asset = "sine_1100"},
+	}
+
+	local HIGH_FREQUENCIES = {
+		{freq = 1318, asset = "sine_1318"},
+		{freq = 1320, asset = "sine_1320"},
+		{freq = 1568, asset = "sine_1568"},
+		{freq = 1760, asset = "sine_1760"},
+		{freq = 2200, asset = "sine_2200"},
+		{freq = 2400, asset = "sine_2400"},
+		{freq = 2640, asset = "sine_2640"},
+		{freq = 3520, asset = "sine_3520"},
+		{freq = 4400, asset = "sine_4400"},
+		{freq = 5280, asset = "sine_5280"},
+		{freq = 6160, asset = "sine_6160"},
+		{freq = 7040, asset = "sine_7040"},
+		{freq = 8000, asset = "sine_8000"},
+		{freq = 8800, asset = "sine_8800"},
+		{freq = 9600, asset = "sine_9600"},
+		{freq = 10560, asset = "sine_10560"},
+		{freq = 11200, asset = "sine_11200"},
+		{freq = 12800, asset = "sine_12800"},
+		{freq = 13600, asset = "sine_13600"},
+		{freq = 14400, asset = "sine_14400"},
+		{freq = 15200, asset = "sine_15200"},
+		{freq = 16000, asset = "sine_16000"},
+	}
+
+	-- Available frequencies for pitch-based selection (combined for original algorithm)
+	local AVAILABLE_FREQUENCIES = {
+		{freq = 55, asset = "sine_55"},
+		{freq = 82, asset = "sine_82"},
+		{freq = 110, asset = "harmonic_110"},
+		{freq = 110, asset = "sine_110"},
+		{freq = 147, asset = "sine_147"},
+		{freq = 164, asset = "sine_164"},
+		{freq = 196, asset = "sine_196"},
+		{freq = 220, asset = "harmonic_220"},
+		{freq = 294, asset = "sine_294"},
+		{freq = 330, asset = "sine_330"},
+		{freq = 392, asset = "sine_392"},
+		{freq = 440, asset = "sine_440"},
+		{freq = 659, asset = "sine_659"},
+		{freq = 660, asset = "sine_660"},
+		{freq = 784, asset = "sine_784"},
+		{freq = 800, asset = "sine_800"},
+		{freq = 880, asset = "sine_880"},
+		{freq = 1100, asset = "sine_1100"},
+		{freq = 1318, asset = "sine_1318"},
+		{freq = 1320, asset = "sine_1320"},
+		{freq = 1568, asset = "sine_1568"},
+		{freq = 1760, asset = "sine_1760"},
+		{freq = 2200, asset = "sine_2200"},
+		{freq = 2400, asset = "sine_2400"},
+		{freq = 2640, asset = "sine_2640"},
+		{freq = 3520, asset = "sine_3520"},
+		{freq = 4400, asset = "sine_4400"},
+		{freq = 5280, asset = "sine_5280"},
+		{freq = 6160, asset = "sine_6160"},
+		{freq = 7040, asset = "sine_7040"},
+		{freq = 8000, asset = "sine_8000"},
+		{freq = 8800, asset = "sine_8800"},
+		{freq = 9600, asset = "sine_9600"},
+		{freq = 10560, asset = "sine_10560"},
+		{freq = 11200, asset = "sine_11200"},
+		{freq = 12800, asset = "sine_12800"},
+		{freq = 13600, asset = "sine_13600"},
+		{freq = 14400, asset = "sine_14400"},
+		{freq = 15200, asset = "sine_15200"},
+		{freq = 16000, asset = "sine_16000"},
+	}
+	-- Find the closest available frequency for pitch shifting
+	local function findClosestFrequency(targetFreq)
+		local bestMatch = AVAILABLE_FREQUENCIES[1]
+		local bestRatio = math.abs(math.log(targetFreq / bestMatch.freq))
+		for _, freqData in ipairs(AVAILABLE_FREQUENCIES) do
+			local ratio = math.abs(math.log(targetFreq / freqData.freq))
+			if ratio < bestRatio then
+				bestRatio = ratio
+				bestMatch = freqData
+			end
+		end
+		return bestMatch.freq, bestMatch.asset
+	end
+
+	-- Find the best frequency from a specific frequency table
+	local function findBestFromTable(targetFreq, freqTable)
+		local bestMatch = freqTable[1]
+		local bestRatio = math.abs(math.log(targetFreq / bestMatch.freq))
+		for _, freqData in ipairs(freqTable) do
+			local ratio = math.abs(math.log(targetFreq / freqData.freq))
+			if ratio < bestRatio then
+				bestRatio = ratio
+				bestMatch = freqData
+			end
+		end
+		return bestMatch.freq, bestMatch.asset
+	end
+	-- TimePosition manipulation modes:
+	-- "none" - No TimePosition manipulation (smoothest, uses LoopRegion/PlaybackRegion only)
+	-- "medium" - Only manipulates TimePosition for frequencies > 500Hz (balanced)
+	-- "full" - Full TimePosition manipulation on all frequencies (original behavior, may cause clicking)
+	local TIMEPOS_NONE = "none"
+	local TIMEPOS_MEDIUM = "medium"
+	local TIMEPOS_FULL = "full"
+
+	function emitter.new(parent)
+		local self = {}
+		self.Parent = parent
+		self.Volume = 1
+		self._sounds = {}
+		self._freqs = {}
+		self._stereoEnabled = false -- Will be set based on audio channel count
+		self._lastTimePos = {} -- Track last TimePosition for low frequency smoothing
+		self.TimePositionMode = TIMEPOS_MEDIUM -- Default to no manipulation for smoothest playback
+		return setmetatable(self, emitter)
+	end
+
+	-- Set TimePosition manipulation mode
+	-- mode: "none", "medium", or "full"
+	function emitter:SetTimePositionMode(mode)
+		if mode == TIMEPOS_NONE or mode == TIMEPOS_MEDIUM or mode == TIMEPOS_FULL then
+			self.TimePositionMode = mode
+		else
+			warn("Invalid TimePositionMode: " .. tostring(mode) .. ". Use 'none', 'medium', or 'full'.")
+		end
+	end
+	function emitter:SetStereoMode(enabled)
+		self._stereoEnabled = enabled
+		-- If switching modes, cleanup existing sounds
+		if self._sounds then
+			for i, v in pairs(self._sounds) do
+				if v then
+					if type(v) == "table" and v.left then
+						-- Stereo sounds
+						v.left:Destroy()
+						v.right:Destroy()
+					else
+						-- Mono sound
+						v:Destroy()
+					end
+				end
+			end
+			self._sounds = {}
+			self._freqs = {}
+			self._lastTimePos = {} -- Clear position tracking
+		end
+	end
+	function emitter:Silence()
+		for i ,v in self._sounds do
+			if self._stereoEnabled and v.left then
+				v.left.Playing = false
+				v.right.Playing = false
+			elseif not self._stereoEnabled then
+				v.Playing = false
+			end
+		end
+	end
+	function emitter:Destroy()
+		for i, v in self._sounds do
+			if self._stereoEnabled and v.left then
+				v.left:Destroy()
+				v.right:Destroy()
+			elseif not self._stereoEnabled then
+				v:Destroy()
+			end
+		end
+	end
+	-- Cache math functions for performance
+	local math_abs = math.abs
+	local math_clamp = math.clamp
+	local math_sin = math.sin
+	local math_sqrt = math.sqrt
+
+	function emitter:_recieve(player, out)
+		if not player.Loaded then return end
+		local sound_count = player.WindowSize // 2
+		local totalLoudness = 0
+		local sampleCount = 0
+
+		for i = 0, sound_count do
+			local v = self._sounds[i + 1]
+
+			-- Cleanup invalid sounds
+			if v and (i > (sound_count + 1) or 
+				(not self._stereoEnabled and v.Parent ~= self.Parent) or
+				(self._stereoEnabled and (not v.left or v.left.Parent ~= self.Parent))) then
+
+				if self._stereoEnabled and v.left then
+					v.left:Destroy()
+					v.right:Destroy()
+				elseif not self._stereoEnabled then
+					v:Destroy()
+				end
+				self._sounds[i + 1] = nil
+				continue
+			end
+
+			-- Create new sounds if needed
+			if not v then
+				local frequency = i * player.SampleRate / player.WindowSize * math_abs(player.Pitch)
+				local sound_freq, asset_name
+
+				-- Smart frequency selection using appropriate table based on target frequency
+				if frequency <= 1100 then
+					sound_freq, asset_name = findBestFromTable(frequency, LOW_FREQUENCIES)
+				else
+					sound_freq, asset_name = findBestFromTable(frequency, HIGH_FREQUENCIES)
+				end
+				
+				local freq_pbs = frequency / sound_freq
+				
+				pcall(function()
+					-- Fallback logic
+					if freq_pbs > 10 then
+						if frequency <= 1100 then
+							sound_freq, asset_name = findBestFromTable(frequency, HIGH_FREQUENCIES)
+						else
+							sound_freq, asset_name = findBestFromTable(frequency, LOW_FREQUENCIES)
+						end
+						freq_pbs = frequency / sound_freq
+					end
+
+					freq_pbs = math_clamp(freq_pbs, 0.01, 50)
+				end)
+
+
+				if self._stereoEnabled then
+					local leftSound = Instance.new("Sound")
+					local rightSound = Instance.new("Sound")
+					leftSound.SoundId = AUDIO_ASSETS[asset_name]
+					leftSound.Looped = true
+					leftSound.PlaybackSpeed = freq_pbs
+					-- Use LoopRegion and PlaybackRegion for smooth looping without clicks
+					leftSound.LoopRegion = NumberRange.new(0.2, 4.5)
+					leftSound.PlaybackRegion = NumberRange.new(0.2, 4.5)
+					leftSound.PlaybackRegionsEnabled = true
+					leftSound.Parent = self.Parent
+
+					rightSound.SoundId = AUDIO_ASSETS[asset_name]
+					rightSound.Looped = true
+					rightSound.PlaybackSpeed = freq_pbs
+					rightSound.LoopRegion = NumberRange.new(0.2, 4.5)
+					rightSound.PlaybackRegion = NumberRange.new(0.2, 4.5)
+					rightSound.PlaybackRegionsEnabled = true
+					rightSound.Parent = self.Parent
+
+					leftSound:Play()
+					rightSound:Play()
+
+					self._sounds[i + 1] = {left = leftSound, right = rightSound}
+				else
+					local sound = Instance.new("Sound")
+					sound.SoundId = AUDIO_ASSETS[asset_name]
+					sound.Looped = true
+					sound.PlaybackSpeed = freq_pbs
+					-- Use LoopRegion and PlaybackRegion for smooth looping without clicks
+					sound.LoopRegion = NumberRange.new(0.2, 4.5)
+					sound.PlaybackRegion = NumberRange.new(0.2, 4.5)
+					sound.PlaybackRegionsEnabled = true
+					sound.Parent = self.Parent
+
+					sound:Play()
+					self._sounds[i + 1] = sound
+				end
+
+				self._freqs[i + 1] = sound_freq
+			end
+		end
+
+		-- Update loop - Optimized: Removed task.spawn, cached locals, buffer API
+		for i, v in ipairs(self._sounds) do
+			if not player.IsPlaying then
+				if self._stereoEnabled and v.left then
+					v.left.Volume = 0
+					v.right.Volume = 0
+				elseif not self._stereoEnabled then
+					v.Volume = 0
+				end
+				continue
+			end
+
+			-- Buffer API Integration: Get magnitude directly
+			local magnitude = player:GetMagnitudeAt(i)
+
+			-- Silence Threshold: Skip processing for negligible magnitude
+			if magnitude < 0.00001 then
+				if self._stereoEnabled and v.left then
+					v.left.Volume = 0
+					v.right.Volume = 0
+				else
+					v.Volume = 0
+				end
+				continue
+			end
+
+			local frequency = self._freqs[i]
+			local pit = ((i - 1) * (player.SampleRate / player.WindowSize)) * math_abs(player.Pitch)
+
+			-- Volume calculation with improved bass response
+			local volume = magnitude * 0.02 * self.Volume
+
+			-- Frequency-dependent volume curve
+			-- global gain (this is the real loudness knob)
+			local MASTER_GAIN = 3.0
+
+			-- frequency shaping
+			if frequency < 80 then
+				-- sub-bass (feel it)
+				volume = volume * 3.0
+			elseif frequency < 160 then
+				-- bass
+				volume = volume * 2.4
+			elseif frequency < 400 then
+				-- low-mids (adds body)
+				volume = volume * 1.6
+			elseif frequency > 8000 then
+				-- tame harsh highs
+				volume = volume * 0.7
+			end
+
+			-- apply master gain last
+			volume = volume * MASTER_GAIN
+
+			-- Calculate playback speed - use higher minimum for bass to prevent bitcrushing
+			local minSpeed = frequency < 200 and 0.5 or 0.1
+			local playbackSpeed = math_clamp(pit / frequency, minSpeed, 50)
+
+			-- TimePosition manipulation based on mode
+			local shouldManipulateTimePos = false
+			local timePos = nil
+
+			if self.TimePositionMode == TIMEPOS_FULL then
+				-- Full manipulation on all frequencies
+				shouldManipulateTimePos = true
+			elseif self.TimePositionMode == TIMEPOS_MEDIUM then
+				-- Only manipulate for higher frequencies (> 500Hz) to avoid bass clicking
+				shouldManipulateTimePos = frequency > 300
+			end
+			-- TIMEPOS_NONE = no manipulation
+
+			if shouldManipulateTimePos then
+				local phase = player:GetPhaseAt(i)
+				local normalizedPhase = (phase / (2 * math.pi)) % 1
+				local phaseOffset = normalizedPhase * (1 / frequency)
+				local baseOffset = frequency < 100 and 0.2 or 0.3
+				timePos = math.fmod(baseOffset + phaseOffset, 4.3)
+			end
+
+			if self._stereoEnabled and v.left then
+				local panFactor = 0.1 * math_sin(frequency * 0.001)
+
+				v.left.Volume = volume * (1 - panFactor)
+				v.left.PlaybackSpeed = playbackSpeed
+
+				v.right.Volume = volume * (1 + panFactor)
+				v.right.PlaybackSpeed = playbackSpeed
+
+				if shouldManipulateTimePos and timePos then
+					v.left.TimePosition = timePos
+					v.right.TimePosition = timePos
+				end
+			elseif not self._stereoEnabled then
+				v.Volume = volume
+				v.PlaybackSpeed = playbackSpeed
+
+				if shouldManipulateTimePos and timePos then
+					v.TimePosition = timePos
+				end
+			end
+
+			if magnitude > 0 then
+				totalLoudness = totalLoudness + (magnitude * magnitude)
+				sampleCount = sampleCount + 1
+			end
+		end
+
+		if player.IsPlaying and sampleCount > 0 then
+			local rmsLoudness = math_sqrt(totalLoudness / sampleCount) * 0.01 * self.Volume
+			if self.Parent then
+				self.Parent:SetAttribute("PL", rmsLoudness)
+			end
+		elseif not player.IsPlaying then
+			if self.Parent then
+				self.Parent:SetAttribute("PL", 0)
+			end
+		end
+	end
+	return emitter
+end
+
+return function(...)
+	return loadfftemit(...)
+end
