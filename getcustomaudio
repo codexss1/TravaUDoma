@@ -1,21 +1,23 @@
-local HttpService = game:GetService("HttpService")
+
 local SoundService = game:GetService("SoundService")
 local function HttpGet(url)
 	return game:HttpGet(url)
 end
 -- Base64 decoder
+print("-------")
 local base64Decode = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/B64"))()
 -- WavPlayer
 local WavPlayer = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WavPlayer"))
 -- FFTEmitter 
-local FFTEmitter = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))
+local FFTEmitter = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))()
 
 local wav_player = WavPlayer()
-local fft_emitter = FFTEmitter()
+local fft_emitter = FFTEmitter
 
 -- Audio server configuration
 local AUDIO_SERVER_BASE_URL = "https://vplrapi.secretservicepanel.com"
 local function getcustomaudio(url, instance)
+	print("ive been triggered!")
 	if not url or not instance then
 		error("getcustomaudio requires both url and instance parameters")
 	end
@@ -112,7 +114,6 @@ local function getcustomaudio(url, instance)
 				return buffer.fromstring(audioBuffer)
 			end
 		end)
-
 		if not success then
 			error("Failed to load audio from URL: " .. tostring(response))
 		end
@@ -124,9 +125,12 @@ local function getcustomaudio(url, instance)
 		if _emitter then
 			_emitter:Destroy()
 		end
+		print("herre")
 		_player = wav_player.new(1024)
+		print("there")
 		_player:Load(_audioData)
 		_emitter = fft_emitter.new(instance)
+		print("failedhere?")
 		_emitter.Volume = 3
 		_player:PipeEmitter(_emitter)
 		while not _player.Loaded do
@@ -143,6 +147,8 @@ local function getcustomaudio(url, instance)
 		end
 		_isLoaded = true
 	end
+
+	print(1)
 	-- Play function
 	function audioObject:Play()
 		if not _isLoaded then
@@ -280,4 +286,3 @@ local function getcustomaudio(url, instance)
 	end)
 	return audioObject
 end
-return getcustomaudio
