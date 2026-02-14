@@ -1,5 +1,6 @@
 local RunService = game:GetService("RunService")
-local parse_wave_content = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WAVE"))
+local parse_wave_content_func = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WAVE"))
+local WavPlayerModule = parse_wave_content_func() -- call it to get the table
 
 local function loadwavplr()
 
