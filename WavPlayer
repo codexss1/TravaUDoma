@@ -1,0 +1,270 @@
+local RunService = game:GetService("RunService")
+local parse_wave_content = require(script.WAVE)
+
+local function loadwavplr()
+
+	-- FFT State Creator (Optimized for f32)
+	local function create_fft_state(size)
+		local state = {}
+		local log2n = math.log(size) / math.log(2)
+
+		-- Bit Reversal Table (u32 is fine)
+		state.bit_rev = buffer.create(size * 4)
+		for i = 0, size - 1 do
+			local rev = 0
+			local temp = i
+			for j = 0, log2n - 1 do
+				rev = bit32.bor(bit32.lshift(rev, 1), bit32.band(temp, 1))
+				temp = bit32.rshift(temp, 1)
+			end
+			buffer.writeu32(state.bit_rev, i * 4, rev)
+		end
+
+		-- Trig Tables (Optimized to f32 - 4 bytes)
+		state.cos_table = buffer.create((size // 2) * 4) 
+		state.sin_table = buffer.create((size // 2) * 4) 
+		for k = 0, size // 2 - 1 do
+			local angle = -2 * math.pi * k / size
+			buffer.writef32(state.cos_table, k * 4, math.cos(angle))
+			buffer.writef32(state.sin_table, k * 4, math.sin(angle))
+		end
+		return state
+	end
+
+	-- FFT Execution (Optimized: f32, no bounds checks)
+	local function fft(reals, imaginaries, state)
+		local n = buffer.len(reals) // 4  -- f32 stride
+		local bit_rev = state.bit_rev
+		local cos_table = state.cos_table
+		local sin_table = state.sin_table
+
+		-- Bit-reversal
+		for i = 0, n - 1 do
+			local j = buffer.readu32(bit_rev, i * 4)
+			if j > i then
+				local i_offset = i * 4
+				local j_offset = j * 4
+
+				local temp_real = buffer.readf32(reals, i_offset)
+				buffer.writef32(reals, i_offset, buffer.readf32(reals, j_offset))
+				buffer.writef32(reals, j_offset, temp_real)
+
+				local temp_imag = buffer.readf32(imaginaries, i_offset)
+				buffer.writef32(imaginaries, i_offset, buffer.readf32(imaginaries, j_offset))
+				buffer.writef32(imaginaries, j_offset, temp_imag)
+			end
+		end
+
+		local m = 1
+		local half_len = buffer.len(cos_table)
+
+		while m < n do
+			local m2 = m * 2
+			-- Pre-calculate stride for speed
+			local m2_stride = m2 * 4 
+
+			for k = 0, m - 1 do
+				-- Removed bounds check: (k * n // m2) is guaranteed to be within table size for POT sizes
+				local cos_idx = (k * n // m2) * 4
+				local cos = buffer.readf32(cos_table, cos_idx)
+				local sin = buffer.readf32(sin_table, cos_idx)
+
+				for j = k, n - 1, m2 do
+					local j_idx = j * 4
+					local jm_idx = j_idx + (m * 4)
+
+					local real_jm = buffer.readf32(reals, jm_idx)
+					local imag_jm = buffer.readf32(imaginaries, jm_idx)
+
+					-- Butterfly operations
+					local t_re = cos * real_jm - sin * imag_jm
+					local t_im = sin * real_jm + cos * imag_jm
+
+					local real_j = buffer.readf32(reals, j_idx)
+					local imag_j = buffer.readf32(imaginaries, j_idx)
+
+					buffer.writef32(reals, jm_idx, real_j - t_re)
+					buffer.writef32(imaginaries, jm_idx, imag_j - t_im)
+					buffer.writef32(reals, j_idx, real_j + t_re)
+					buffer.writef32(imaginaries, j_idx, imag_j + t_im)
+				end
+			end
+			m = m2
+		end
+	end
+
+	local player = {}
+	player.__index = player
+
+	function player.new(window_size)
+		local self = setmetatable({}, player)
+		self.IsPlaying = false
+		self.TimePosition = 0
+		self.Tempo = 1
+		self.Pitch = 1
+		self.BitCrush = 1
+		self.Length = 0
+		self.SampleRate = 44100
+		self.IsLoading = false
+		self._pipes = {}
+		self._out = {}
+
+		self:ChangeWindowSize(window_size)
+		return self
+	end
+
+	function player:PipeEmitter(emitter)
+		table.insert(self._pipes, emitter)
+	end
+
+	-- Direct Buffer Access (Fastest Method)
+	function player:GetMagnitudeAt(index)
+		if self._magnitude_buffer and index >= 1 and index <= (self.WindowSize // 2 + 1) then
+			return buffer.readf32(self._magnitude_buffer, (index - 1) * 4)
+		end
+		return 0
+	end
+
+	function player:GetPhaseAt(index)
+		if self._phase_buffer and index >= 1 and index <= (self.WindowSize // 2 + 1) then
+			return buffer.readf32(self._phase_buffer, (index - 1) * 4)
+		end
+		return 0
+	end
+
+	function player:GetFFT()
+		return self._out
+	end
+
+	function player:ChangeWindowSize(window_size)
+		self.WindowSize = window_size
+		self._fft_state = create_fft_state(window_size)
+
+		-- Resize buffers (Using f32 now, so * 4 bytes)
+		self._reals_buffer = buffer.create(window_size * 4) 
+		self._imaginaries_buffer = buffer.create(window_size * 4) 
+		self._magnitude_buffer = buffer.create((window_size // 2 + 1) * 4)
+		self._phase_buffer = buffer.create((window_size // 2 + 1) * 4)
+
+		-- Reset output table
+		self._out = table.create(window_size // 2 + 1)
+		for i = 1, window_size // 2 + 1 do
+			self._out[i] = { 0, 0 }
+		end
+	end
+
+	function player:Load(data)
+		task.spawn(function()
+			self.IsLoading = true
+			local success, wav_data = pcall(parse_wave_content, data)
+
+			if not success then
+				warn("Failed to parse WAV:", wav_data)
+				self.IsLoading = false
+				return
+			end
+
+			self.Channels = wav_data.channels
+			self.SampleRate = wav_data.sample_rate
+			-- Length calculated using f32 stride (4 bytes)
+			self.Length = buffer.len(wav_data.samples) / 4 / wav_data.sample_rate 
+
+			local samples = wav_data.samples
+			local sample_rate = wav_data.sample_rate
+			local samples_length = buffer.len(samples) // 4 -- f32 count
+			local previous_index = -1
+
+			-- Caching heavily used references for the update loop
+			local fft_func = fft
+			local buf_readf32 = buffer.readf32
+			local buf_writef32 = buffer.writef32
+			local buf_fill = buffer.fill
+			local math_sqrt = math.sqrt
+			local math_atan2 = math.atan2
+
+			self._update = function(delta_time)
+				self.TimePosition = (self.TimePosition + delta_time * self.Tempo) % self.Length
+				local index = math.floor(self.TimePosition * (sample_rate / self.WindowSize)) * self.WindowSize
+
+				if previous_index ~= index then
+					-- 1. Prepare Reals (Zero fill + Read)
+					buf_fill(self._reals_buffer, 0, 0)
+
+					-- Optimize read loop: avoid if-checks inside loop by clamping range
+					local read_start = math.max(0, -index)
+					local read_end = math.min(self.WindowSize, samples_length - index)
+
+					-- Only loop over valid data range
+					for i = read_start, read_end - 1 do
+						local sample_val = buf_readf32(samples, (index + i) * 4)
+						buf_writef32(self._reals_buffer, i * 4, sample_val)
+					end
+
+					-- 2. Clear Imaginaries
+					buf_fill(self._imaginaries_buffer, 0, 0)
+
+					-- 3. Run FFT
+					fft_func(self._reals_buffer, self._imaginaries_buffer, self._fft_state)
+
+					-- 4. Calculate Mag/Phase
+					local out_table = self._out
+					local mag_buf = self._magnitude_buffer
+					local phase_buf = self._phase_buffer
+
+					for i = 0, (self.WindowSize // 2) do
+						local offset = i * 4
+						local real = buf_readf32(self._reals_buffer, offset)
+						local imaginary = buf_readf32(self._imaginaries_buffer, offset)
+
+						local magnitude = math_sqrt(real * real + imaginary * imaginary)
+						local phase = math_atan2(imaginary, real)
+
+						buf_writef32(mag_buf, offset, magnitude)
+						buf_writef32(phase_buf, offset, phase)
+
+						-- Reuse existing table objects to reduce GC
+						local out_entry = out_table[i + 1]
+						out_entry[1] = magnitude
+						out_entry[2] = phase
+					end
+
+					-- 5. Send to Pipes
+					for _, pipe in self._pipes do
+						pipe:_recieve(self, out_table)
+					end
+				end
+				previous_index = index
+			end
+
+			self.IsLoading = false
+			self.Loaded = true
+		end)
+	end
+
+	function player:Play()
+		if self.IsPlaying then self:Stop() end
+		self.IsPlaying = true
+		self._connection = RunService.Heartbeat:Connect(function(dt)
+			if self._update then self._update(dt) end
+		end)
+	end
+
+	function player:Stop()
+		self:Pause()
+		self.TimePosition = 0
+	end
+
+	function player:Pause()
+		self.IsPlaying = false
+		if self._connection then self._connection:Disconnect() end
+		for _, v in self._pipes do
+			v:_recieve(self, self._out)
+		end
+	end
+
+	return player
+end
+
+return function(...)
+	return loadwavplr()
+end
