@@ -124,9 +124,9 @@ local function getcustomaudio(url, instance)
 		if _emitter then
 			_emitter:Destroy()
 		end
-		_player = wav_player(1024)
+		_player = wav_player.new(1024)
 		_player:Load(_audioData)
-		_emitter = fft_emitter(instance)
+		_emitter = fft_emitter.new(instance)
 		_emitter.Volume = 3
 		_player:PipeEmitter(_emitter)
 		while not _player.Loaded do
