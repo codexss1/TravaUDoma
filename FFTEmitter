@@ -464,6 +464,5 @@ local function loadfftemit()
 	return emitter
 end
 
-return function(...)
-	return loadfftemit(...)
-end
+return loadfftemit()
+
