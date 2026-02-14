@@ -1,0 +1,211 @@
+local WAVE_CHUNKS = {
+	["RIFF"] = "RIFF",
+	["WAVE"] = "WAVE",
+	["FORMAT"] = "fmt ",
+	["FACT"] = "fact",
+	["DATA"] = "data"
+}
+
+local WAVE_FORMAT_TAGS = {
+	[0x0000] = "UNKNOWN",
+	[0x0001] = "PCM",
+	[0x0003] = "PCM_FLOAT",
+	[0x0006] = "A_LAW",
+	[0x0007] = "MU_LAW",
+	[0xFFFE] = "EXTENSIBLE"
+}
+
+local WAVE_FORMAT_IDS = {
+	["UNKNOWN"] = 		0x0000,
+	["PCM"] = 			0x0001,
+	["PCM_FLOAT"] = 	0x0003,
+	["A_LAW"] = 		0x0006,
+	["MU_LAW"] = 		0x0007,
+	["EXTENSIBLE"] = 	0xFFFE,
+}
+
+local function buffer_readi24(buf: buffer, offset: number): number
+	local hi = buffer.readu16(buf, offset)
+	local lo = buffer.readu8(buf, offset + 2)
+	local value = bit32.bor(bit32.lshift(lo, 16), hi)
+	if bit32.band(value, 0x800000) ~= 0 then value -= 0x1000000 end
+	return value
+end
+
+local function Alaw_to_linear(sample: number): number
+	sample = bit32.bxor(sample, 0x55)
+	local sign = bit32.rshift(sample, 7)
+	local exponent = bit32.band(bit32.rshift(sample, 4), 0x07)
+	local mantissa = bit32.band(sample, 0x0F)
+	local linear = bit32.lshift(mantissa, 4) + 8
+	if exponent ~= 0 then linear = linear + 0x100 end
+	if exponent > 1 then linear = bit32.lshift(linear, exponent - 1) end
+	return if sign ~= 0 then -linear / 32768 else linear / 32768
+end
+
+local function Mulaw_to_linear(sample: number): number
+	sample = bit32.bnot(sample)
+	local sign = bit32.rshift(sample, 7)
+	local exponent = bit32.band(bit32.rshift(sample, 4), 0x07)
+	local mantissa = bit32.band(sample, 0x0F)
+	local linear = bit32.lshift(bit32.lshift(mantissa, 3) + 0x84, exponent) - 0x84
+	return if sign ~= 0 then -linear / 32768 else linear / 32768
+end
+
+local function parse_wav_samples(
+	source_buf: buffer,
+	start_offset: number,
+	format_id: number,
+	data_size: number,
+	sample_length: number,
+	channels: number,
+	bits_per_sample: number
+): buffer
+	local bytes_per_sample = (bits_per_sample / 8)
+	local sample_inc = (bytes_per_sample * channels)
+
+	-- OPTIMIZATION: Create buffer for f32 (4 bytes) instead of f64 (8 bytes)
+	local samples_result = buffer.create(sample_length * 4) 
+
+	-- Pre-calculate divisors for normalization
+	local div_8 = 128
+	local div_16 = 32768
+	local div_24 = 8388608
+	local div_32 = 2147483648
+
+	for i = 0, sample_length - 1 do
+		local sample_pos = start_offset + (i * sample_inc)
+		local sample_sum = 0
+
+		for channel_idx = 0, (channels - 1) do
+			local read_pos = sample_pos + (channel_idx * bytes_per_sample)
+			local current_sample = 0
+
+			if format_id == WAVE_FORMAT_IDS.PCM then
+				if bits_per_sample == 16 then
+					current_sample = buffer.readi16(source_buf, read_pos) / div_16
+				elseif bits_per_sample == 8 then
+					current_sample = (buffer.readu8(source_buf, read_pos) - 128) / div_8
+				elseif bits_per_sample == 24 then
+					current_sample = buffer_readi24(source_buf, read_pos) / div_24
+				elseif bits_per_sample == 32 then
+					current_sample = buffer.readi32(source_buf, read_pos) / div_32
+				end
+			elseif format_id == WAVE_FORMAT_IDS.PCM_FLOAT then
+				if bits_per_sample == 32 then
+					current_sample = buffer.readf32(source_buf, read_pos)
+				elseif bits_per_sample == 64 then
+					current_sample = buffer.readf64(source_buf, read_pos)
+				end
+			elseif format_id == WAVE_FORMAT_IDS.A_LAW then
+				current_sample = Alaw_to_linear(buffer.readu8(source_buf, read_pos))
+			elseif format_id == WAVE_FORMAT_IDS.MU_LAW then
+				current_sample = Mulaw_to_linear(buffer.readu8(source_buf, read_pos))
+			end
+			sample_sum += current_sample
+		end
+
+		-- Write as f32 (4 bytes)
+		buffer.writef32(samples_result, i * 4, sample_sum / channels)
+	end
+
+	return samples_result
+end
+
+local function parse_wave_content(raw_content: string | buffer): {[string]: any}
+	local wave_buf: buffer = (typeof(raw_content) == "string") and buffer.fromstring(raw_content) or raw_content
+
+	local _content_len = buffer.len(wave_buf) - 8
+	local buf_pos = 0
+
+	local function read_string(len: number): string
+		local result = buffer.readstring(wave_buf, buf_pos, len)
+		buf_pos += len
+		return result
+	end
+
+	local function read_u16(): number
+		local r = buffer.readu16(wave_buf, buf_pos); buf_pos += 2; return r
+	end
+
+	local function read_u32(): number
+		local r = buffer.readu32(wave_buf, buf_pos); buf_pos += 4; return r
+	end
+
+	local function find_chunk(chunk_id: string): boolean
+		local trav_pos = buf_pos
+		while trav_pos < _content_len do
+			local _current_id = buffer.readstring(wave_buf, trav_pos, 4)
+			if _current_id == chunk_id then
+				buf_pos += (trav_pos - buf_pos) + 4
+				return true
+			end
+			trav_pos += 4
+			local chunk_size = buffer.readu32(wave_buf, trav_pos)
+			trav_pos += (chunk_size + 4)
+			if trav_pos % 2 ~= 0 then trav_pos += 1 end
+		end
+		return false
+	end
+
+	if read_string(4) ~= WAVE_CHUNKS.RIFF then error("Not RIFF", 2) end
+	read_u32()
+	if read_string(4) ~= WAVE_CHUNKS.WAVE then error("Not WAVE", 2) end
+	if not find_chunk(WAVE_CHUNKS.FORMAT) then error("No FORMAT chunk", 2) end
+	read_u32() -- Skip format chunk size
+
+	local format_id = read_u16()
+	local channels = read_u16()
+	local sample_rate = read_u32()
+	local data_rate = read_u32()
+	local block_align = read_u16()
+	local bits_per_sample = read_u16()
+
+	local ext_size = (if format_id == WAVE_FORMAT_IDS.PCM then 0 else read_u16())
+	local sample_length = -1
+	local sub_format = 0
+
+	if (format_id == WAVE_FORMAT_IDS.EXTENSIBLE and ext_size == 22) then
+		read_u16(); read_u32() -- Skip valid bits and channel mask
+		local sf_low = buffer.readu8(wave_buf, buf_pos); local sf_high = buffer.readu8(wave_buf, buf_pos + 1)
+		sub_format = bit32.bor(bit32.lshift(sf_high, 8), sf_low)
+		buf_pos += 16
+	end
+
+	if find_chunk(WAVE_CHUNKS.FACT) then
+		read_u32(); sample_length = read_u32()
+	end
+
+	if not find_chunk(WAVE_CHUNKS.DATA) then error("No DATA chunk", 2) end
+	local data_size = read_u32()
+
+	if sample_length == -1 then
+		sample_length = data_size / (bits_per_sample / 8) / channels
+	end
+
+	-- OPTIMIZATION: Pass offset, do not copy string
+	local data_offset = buf_pos
+
+	return {
+		format_id = format_id,
+		channels = channels,
+		sample_rate = sample_rate,
+		bits_per_sample = bits_per_sample,
+		data_size = data_size,
+		-- Pass the original buffer and offset
+		samples = parse_wav_samples(
+			wave_buf,
+			data_offset,
+			(format_id == WAVE_FORMAT_IDS.EXTENSIBLE and sub_format or format_id),
+			data_size,
+			sample_length,
+			channels,
+			bits_per_sample
+		)
+	}
+end
+
+
+return function(...)
+	return parse_wave_content(...)
+end
