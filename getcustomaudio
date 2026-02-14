@@ -6,9 +6,9 @@ end
 -- Base64 decoder
 local base64Decode = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/B64"))()
 -- WavPlayer
-local WavPlayer = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WavPlayer"))()
+local WavPlayer = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/WavPlayer"))
 -- FFTEmitter 
-local FFTEmitter = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))()
+local FFTEmitter = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))
 
 local wav_player = WavPlayer()
 local fft_emitter = FFTEmitter()
