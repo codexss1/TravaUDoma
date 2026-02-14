@@ -265,6 +265,5 @@ local function loadwavplr()
 	return player
 end
 
-return function(...)
-	return loadwavplr()
-end
+return loadwavplr()
+
