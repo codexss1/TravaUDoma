@@ -10,8 +10,9 @@ local WavPlayer = loadstring(game:HttpGet("https://raw.githubusercontent.com/cod
 -- FFTEmitter 
 local FFTEmitter = loadstring(game:HttpGet("https://raw.githubusercontent.com/codexss1/TravaUDoma/refs/heads/main/FFTEmitter"))()
 
-local wav_player = loadwavplr()
-local fft_emitter = loadfftemit()
+local wav_player = WavPlayer
+local fft_emitter = FFTEmitter
+
 -- Audio server configuration
 local AUDIO_SERVER_BASE_URL = "https://vplrapi.secretservicepanel.com"
 local function getcustomaudio(url, instance)
